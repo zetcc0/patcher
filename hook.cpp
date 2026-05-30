@@ -5,10 +5,10 @@
 #include <TlHelp32.h>
 
 #define LOGFILE "C:\\Users\\carab\\Desktop\\pinball3d\\patcher\\hook_calls.txt"
+#define MAX_PROLOGUE 10
 
 // ---------- thread‑safe logging ----------
 static CRITICAL_SECTION cs;          // guards file access
-
 static void LogToFile(const char* msg)
 {
     EnterCriticalSection(&cs);
@@ -18,18 +18,22 @@ static void LogToFile(const char* msg)
 }
 
 typedef LPSTR (__stdcall *func_t)(short, DWORD);
-func_t Original = nullptr;
+func_t Trampoline = nullptr;
 
 LPSTR __stdcall Hook(short id, DWORD unused)
 {
     char buf[256];
     wsprintfA(buf, "Called with id = %d", id);
     LogToFile(buf);
-    LPSTR result = Original(id, unused);
+    LPSTR result = Trampoline(id, unused);
 
     if (id == 50) 
     {
-      lstrcpynA(result, "Boring", 256); 
+      lstrcpynA(result, "boringggg", 256); 
+    }
+    else if (id == 38) 
+    {
+        lstrcpynA(result, "I love you Apple", 256); 
     }
 
     if (result)
@@ -74,26 +78,31 @@ void FreezeThreads(BOOL freeze)
 }
 
 // ---------- install the hook ----------
-void Install()
+bool InstallHook(DWORD offset, int prologeBytes, void* targetHook, void** outTrampoline)
 {
-    DWORD addr = (DWORD)GetModuleHandleA(NULL) + 0x3752;
-    BYTE orig[5];
-    memcpy(orig, (void*)addr, 5);
+    DWORD hooked_func_addr = (DWORD)GetModuleHandleA(NULL) + offset;
+    BYTE orig[MAX_PROLOGUE];
+    memcpy(orig, (void*)hooked_func_addr, prologeBytes);
 
-    void* tramp = VirtualAlloc(0, 10, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    memcpy(tramp, orig, 5);
-    WriteJmp((BYTE*)tramp+5, (void*)(addr+5));
-    Original = (func_t)tramp;
+    void* tramp = VirtualAlloc(0, prologeBytes + 5, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!tramp) { return false; }
+    
+    memcpy(tramp, orig, prologeBytes);
+    WriteJmp((BYTE*)tramp+prologeBytes, (void*)(hooked_func_addr+prologeBytes));
+
+    *outTrampoline = tramp;
 
     FreezeThreads(TRUE);
-    DWORD old;
-    VirtualProtect((void*)addr, 5, PAGE_EXECUTE_READWRITE, &old);
-    WriteJmp((void*)addr, (void*)&Hook);
-    VirtualProtect((void*)addr, 5, old, &old);
-    FlushInstructionCache(GetCurrentProcess(), (void*)addr, 5);
+    DWORD old_protect;
+    VirtualProtect((void*)hooked_func_addr, prologeBytes, PAGE_EXECUTE_READWRITE, &old_protect);
+    WriteJmp((void*)hooked_func_addr, targetHook);
+    VirtualProtect((void*)hooked_func_addr, prologeBytes, old_protect, &old_protect);
+    FlushInstructionCache(GetCurrentProcess(), (void*)hooked_func_addr, prologeBytes); // update cpu's cache with the new written code
     FreezeThreads(FALSE);
 
     LogToFile("Hook installed.");
+
+    return true;
 }
 
 // ---------- DLL entry point ----------
@@ -104,7 +113,7 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD r, LPVOID)
         DisableThreadLibraryCalls(h);
         InitializeCriticalSection(&cs);
         DeleteFileA(LOGFILE);
-        Install();
+        InstallHook(0x3752, 5, (void*)&Hook, (void**)&Trampoline);
     }
     return TRUE;
 }
