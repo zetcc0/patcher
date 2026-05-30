@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <TlHelp32.h>
 
-#define OFFSET  0x3752
 #define LOGFILE "C:\\Users\\carab\\Desktop\\pinball3d\\patcher\\hook_calls.txt"
 
 // ---------- thread‑safe logging ----------
@@ -77,7 +76,7 @@ void FreezeThreads(BOOL freeze)
 // ---------- install the hook ----------
 void Install()
 {
-    DWORD addr = (DWORD)GetModuleHandleA(NULL) + OFFSET;
+    DWORD addr = (DWORD)GetModuleHandleA(NULL) + 0x3752;
     BYTE orig[5];
     memcpy(orig, (void*)addr, 5);
 
@@ -97,9 +96,6 @@ void Install()
     LogToFile("Hook installed.");
 }
 
-// ---------- thread for installation ----------
-DWORD WINAPI ThreadProc(LPVOID) { Install(); return 0; }
-
 // ---------- DLL entry point ----------
 BOOL WINAPI DllMain(HINSTANCE h, DWORD r, LPVOID)
 {
@@ -108,7 +104,7 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD r, LPVOID)
         DisableThreadLibraryCalls(h);
         InitializeCriticalSection(&cs);
         DeleteFileA(LOGFILE);
-        CreateThread(0,0,ThreadProc,0,0,0);
+        Install();
     }
     return TRUE;
 }
