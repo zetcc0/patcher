@@ -57,3 +57,36 @@ bool InstallHook(DWORD offset, int prologeBytes, void* targetHook, void** outTra
 
     return true;
 }
+
+
+bool InstallMethodHook(DWORD offset, int prologueBytes, void* targetHook, void** outTrampoline)
+{
+    // Entry thunk: __thiscall -> __cdecl (inserts ECX as first arg)
+    BYTE* entryThunk = (BYTE*)VirtualAlloc(0, 64, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!entryThunk) return false;
+    {
+        int i = 0;
+        entryThunk[i++] = 0x58;     // pop eax  (retaddr)
+        entryThunk[i++] = 0x51;     // push ecx (this)
+        entryThunk[i++] = 0x50;     // push eax (retaddr)
+        WriteJmp(entryThunk + i, targetHook);
+    }
+
+    // Install the hook, get the raw trampoline back
+    void* rawTramp = nullptr;
+    if (!InstallHook(offset, prologueBytes, entryThunk, &rawTramp)) return false;
+
+    // Exit thunk: __cdecl -> __thiscall (pops first arg back into ECX)
+    BYTE* exitThunk = (BYTE*)VirtualAlloc(0, 64, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!exitThunk) return false;
+    {
+        int i = 0;
+        exitThunk[i++] = 0x58;      // pop eax  (retaddr)
+        exitThunk[i++] = 0x59;      // pop ecx  (this_ptr -> back into ECX)
+        exitThunk[i++] = 0x50;      // push eax (retaddr)
+        WriteJmp(exitThunk + i, rawTramp);
+    }
+
+    *outTrampoline = exitThunk;     // caller gets the translated trampoline
+    return true;
+}

@@ -3,5 +3,5 @@
 #define HOOK_H
 #include <windows.h>
 bool InstallHook(DWORD offset, int prologeBytes, void* targetHook, void** outTrampoline);
-
+bool InstallMethodHook(DWORD offset, int prologueBytes, void* targetHook, void** outTrampoline);
 #endif
